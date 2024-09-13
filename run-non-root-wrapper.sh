@@ -31,12 +31,13 @@ stringify_arguments () {
 }
 
 main () {
-  local isDocker isPodman isRoot runNonRootEnvAvailable
+  local isDocker isPodman isRoot runNonRootEnvAvailable runNonRootUidGidAvailable
   local runNonRootArgs
   isDocker=false
   isPodman=false
   isRoot=false
   runNonRootEnvAvailable=false
+  runNonRootUidGidAvailable=false
 
   runNonRootArgs=()
 
@@ -44,6 +45,7 @@ main () {
   # shellcheck disable=SC2154
   [ "${container}" = "podman" ] && isPodman=true
   { [ "$(whoami 2> /dev/null)" = 'root' ] || [ "$(id -u)" -eq 0 ]; } && isRoot=true
+  [ -n "${RUN_NON_ROOT_GID}${RUN_NON_ROOT_UID}" ] && runNonRootUidGidAvailable=true
   [ -n "${RUN_NON_ROOT_GID}${RUN_NON_ROOT_GROUP}${RUN_NON_ROOT_UID}${RUN_NON_ROOT_USER}" ] && runNonRootEnvAvailable=true
 
   [ -n "${RUN_NON_ROOT_COMMAND}" ] \
@@ -51,11 +53,15 @@ main () {
   [ "${isDocker}" = "false" ] && [ "${isPodman}" = "false" ] \
     && { echo "Error: Unable do detect container runtime. Exiting ..."; exit 1; }
   [ "${runNonRootEnvAvailable}" = "true" ] && [ "${isRoot}" = "false" ] \
-    && { echo "Error: Please do not mix \`docker/podman --user\` with RUN_NON_ROOT_{GID,GROUP,UID,USER}. Exiting ..."; exit 1; }
+    && { echo "Error: Please do not mix \`docker/podman --user\` with RUN_NON_ROOT_{GID,,GROUP,UID,USER}. Exiting ..."; exit 1; }
+  [ -n "${RUN_NON_ROOT_STATDIR}" ] && [ "${runNonRootUidGidAvailable}" = "true" ] \
+    && { echo "Warning: ignore RUN_NON_ROOT_STATDIR as RUN_NON_ROOT_{GID,UID} is set."; }
+  [ -n "${RUN_NON_ROOT_STATDIR}" ] && [ ! -d "${RUN_NON_ROOT_STATDIR}" ] \
+    && { echo "Error: Path '${RUN_NON_ROOT_STATDIR}' is not a directory. Exiting ..."; exit 1; }
 
   # use tini
   runNonRootArgs+=( "--init" )
-  if [ "${runNonRootEnvAvailable}" = "true" ]; then
+  if [ "${runNonRootUidGidAvailable}" = "true" ]; then
     # environment variables set
     # - no output except not all variables are set
     # - run-non-root will create user
@@ -73,7 +79,10 @@ main () {
     fi
 
     RUN_NON_ROOT_VERBOSE=${RUN_NON_ROOT_VERBOSE:-"false"}
-
+  elif [ -n "${RUN_NON_ROOT_STATDIR}" ]; then
+    runNonRootArgs+=( "--uid" "$(stat -c '%u' "${RUN_NON_ROOT_STATDIR}")" )
+    runNonRootArgs+=( "--gid" "$(stat -c '%g' "${RUN_NON_ROOT_STATDIR}")" )
+    RUN_NON_ROOT_VERBOSE=${RUN_NON_ROOT_VERBOSE:-"false"}
   elif [ "${isPodman}" = "true" ]; then
     # podman detected
     # - no output
