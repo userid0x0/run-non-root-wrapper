@@ -12,7 +12,8 @@ escape_double_quotation_marks () {
 stringify_arguments () {
   # "How to use arguments like $1 $2 … in a for loop?"
   # https://unix.stackexchange.com/questions/314032/how-to-use-arguments-like-1-2-in-a-for-loop
-  local command="$(escape_double_quotation_marks "${1}")"
+  local command
+  command="$(escape_double_quotation_marks "${1}")"
   shift
   for arg
     # "How to check if a string has spaces in Bash shell"
