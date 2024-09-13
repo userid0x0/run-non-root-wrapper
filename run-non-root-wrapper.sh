@@ -58,10 +58,10 @@ main () {
     # environment variables set
     # - no output except not all variables are set
     # - run-non-root will create user
-    if [ -n "${RUN_NON_ROOT_GID}" ] \
-      || [ -n "${RUN_NON_ROOT_GROUP}" ] \
-      || [ -n "${RUN_NON_ROOT_UID}" ] \
-      || [ -n "${RUN_NON_ROOT_USER}" ]; \
+    if [ -z "${RUN_NON_ROOT_GID}" ] \
+      || [ -z "${RUN_NON_ROOT_GROUP}" ] \
+      || [ -z "${RUN_NON_ROOT_UID}" ] \
+      || [ -z "${RUN_NON_ROOT_USER}" ]; \
       then
       echo "Info: Not all RUN_NON_ROOT_{GID,GROUP,UID,USER} environment variables are set."
       echo "Info: RUN_NON_ROOT_GID=${RUN_NON_ROOT_GID}"
