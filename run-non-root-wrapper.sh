@@ -30,14 +30,20 @@ stringify_arguments () {
   printf "%s" "${command}"
 }
 
+homedir_valid () {
+  # invalid if HOMEDIR doesn't exist OR $HOME points to /
+  test -d $(readlink -f ~/) && [ "${HOME}" != "/" ]
+}
+
 main () {
-  local isDocker isPodman isRoot runNonRootEnvAvailable runNonRootUidGidAvailable
+  local isDocker isPodman isRoot runNonRootEnvAvailable runNonRootUidGidAvailable homeDirFallback
   local runNonRootArgs
   isDocker=false
   isPodman=false
   isRoot=false
   runNonRootEnvAvailable=false
   runNonRootUidGidAvailable=false
+  homeDirFallback=""
 
   runNonRootArgs=()
 
@@ -47,6 +53,8 @@ main () {
   { [ "$(whoami 2> /dev/null)" = 'root' ] || [ "$(id -u)" -eq 0 ]; } && isRoot=true
   [ -n "${RUN_NON_ROOT_GID}${RUN_NON_ROOT_UID}" ] && runNonRootUidGidAvailable=true
   [ -n "${RUN_NON_ROOT_GID}${RUN_NON_ROOT_GROUP}${RUN_NON_ROOT_UID}${RUN_NON_ROOT_USER}" ] && runNonRootEnvAvailable=true
+  [ -d "/home/nonroot_fallback" ] && [ "$(stat -c '%A' "/home/nonroot_fallback/")" = "drwxrwxrwx" ] \
+    && homeDirFallback="/home/nonroot_fallback"
 
   [ -n "${RUN_NON_ROOT_COMMAND}" ] \
     && { echo "Error: RUN_NON_ROOT_COMMAND not supported. Exiting ..."; exit 1; }
@@ -92,12 +100,15 @@ main () {
       # - prevent that run-non-root creates a user
       runNonRootArgs+=( "--user" "root" "--uid" "0" )
       runNonRootArgs+=( "--group" "root" "--gid" "0" )
+    else
+      ! homedir_valid && [ -n "${homeDirFallback}" ] && export HOME="${homeDirFallback}"
     fi
     # else: otherwise hope that option --userns=keep-id is set
   elif [ "${isDocker}" = "true" ] && [ "${isRoot}" = "false" ]; then
     # docker not running as root, assume option --user <uid>:<gid> was specified
     # - no output
     RUN_NON_ROOT_VERBOSE=${RUN_NON_ROOT_VERBOSE:-"false"}
+    ! homedir_valid && [ -n "${homeDirFallback}" ] && export HOME="${homeDirFallback}"
   fi
 
   RUN_NON_ROOT_VERBOSE=${RUN_NON_ROOT_VERBOSE:-"true"}
