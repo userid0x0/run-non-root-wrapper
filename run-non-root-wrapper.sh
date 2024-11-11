@@ -32,7 +32,61 @@ stringify_arguments () {
 
 homedir_valid () {
   # invalid if HOMEDIR doesn't exist OR $HOME points to /
-  test -d $(readlink -f ~/) && [ "${HOME}" != "/" ]
+  test -d "$(readlink -f ~/)" && [ "${HOME}" != "/" ]
+}
+
+entrypointd () {
+  # check for scripts in /entrypoint.d
+  # *.envsh: source script (e.g. load environment variables)
+  # *.sh:    execute script
+  local isRoot
+  local file ignore entrypointDir rc
+
+  isRoot="${1}"
+  entrypointDir="/entrypoint.d"
+
+  [ ! -d "${entrypointDir}" ] && return 0
+
+  for file in $(find "${entrypointDir}" -type f | sort -V); do
+    ignore=0
+    case "${file}" in
+    *.envsh|*.sh)
+      if [ ! -x "${file}" ]; then
+        ignore=1
+        verbose && echo "Info: Ignore entrypoint script '${file}' (Reason: not executable)"
+      fi
+      ;;
+    *)
+      ignore=1
+      ;;
+    esac
+    case "${file}" in
+    *.root.sh)
+      if [ "${isRoot}" = "false" ]; then
+        ignore=1
+        verbose && echo "Info: Ignore entrypoint script '${file}' (Reason: current user != root)"
+      fi
+      ;;
+    esac
+
+    [ ${ignore} -ne 0 ] && continue
+
+    case "${file}" in
+    *.envsh)
+      # source script
+      # shellcheck disable=SC1090
+      source "${file}"
+      ;;
+    *.sh)
+      # execute in subshell to prevent our environment gets modified
+      (${file})
+      rc=$?
+      [ ${rc} -ne 0 ] \
+        && { echo "Error: Entrypoint script '${file}' failed (Reason: Exitcode=${rc}). Exiting ..."; exit "${rc}"; }
+      ;;
+    esac
+  done
+  return 0
 }
 
 main () {
@@ -51,6 +105,9 @@ main () {
   # shellcheck disable=SC2154
   [ "${container}" = "podman" ] && isPodman=true
   { [ "$(whoami 2> /dev/null)" = 'root' ] || [ "$(id -u)" -eq 0 ]; } && isRoot=true
+
+  entrypointd "${isRoot}"
+
   [ -n "${RUN_NON_ROOT_GID}${RUN_NON_ROOT_UID}" ] && runNonRootUidGidAvailable=true
   [ -n "${RUN_NON_ROOT_GID}${RUN_NON_ROOT_GROUP}${RUN_NON_ROOT_UID}${RUN_NON_ROOT_USER}" ] && runNonRootEnvAvailable=true
   [ -d "/home/nonroot_fallback" ] && [ "$(stat -c '%A' "/home/nonroot_fallback/")" = "drwxrwxrwx" ] \
