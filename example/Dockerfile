@@ -1,40 +1,48 @@
-FROM docker.io/library/debian:bookworm-slim AS builder
-# see also https://github.com/creemama/docker-run-non-root
+ARG BASEIMAGE=docker.io/library/debian:trixie-slim
 
-ARG SUEXEC_REV=dddd1567b7c76365e1e0aac561287975020a8fad
+# ---
 
-# Install su-exec (https://github.com/ncopa/su-exec/commit/dddd1567b7c76365e1e0aac561287975020a8fad).
-ADD https://github.com/ncopa/su-exec/archive/${SUEXEC_REV}.zip su-exec.zip
-RUN apt update \
-    && apt install --no-install-recommends -y \
-        tcc \
-        libc-dev \
-        make \
-        unzip \
-    && rm -rf /var/lib/{apt,dpkg,cache,log}/ \
-    && unzip su-exec.zip \
-    && make -C su-exec-${SUEXEC_REV} CC=tcc \
-    && mv su-exec-${SUEXEC_REV}/su-exec /usr/local/bin
+FROM ${BASEIMAGE} AS downloader-amd64
 
-# Install run-non-root.
-ADD https://raw.githubusercontent.com/creemama/run-non-root/v1.5.1/run-non-root.sh /usr/local/bin/run-non-root
-RUN chmod +rx /usr/local/bin/run-non-root
+ADD --chown=root:root \
+    --chmod=755 \
+    https://github.com/krallin/tini/releases/download/v0.19.0/tini-static-amd64 \
+    /patch/usr/local/bin/tini
 
-ADD run-non-root-wrapper.sh /usr/local/bin/docker-entrypoint.sh
-RUN chmod +rx /usr/local/bin/docker-entrypoint.sh
+ADD --chown=root:root \
+    --chmod=755 \
+    https://github.com/ncopa/su-exec/releases/download/v0.3/su-exec-static-v0.3-x86_64 \
+    /patch/usr/local/bin/su-exec
 
-FROM docker.io/library/debian:bookworm-slim
+FROM ${BASEIMAGE} AS downloader-arm64
 
-RUN apt update \
-    && apt install -y \
-        tini \
-    && rm -rf /var/lib/{apt,dpkg,cache,log}/
+ADD --chown=root:root \
+    --chmod=755 \
+    https://github.com/krallin/tini/releases/download/v0.19.0/tini-static-arm64 \
+    /patch/usr/local/bin/tini
 
-COPY --from=builder \
-    /usr/local/bin/docker-entrypoint.sh \
-    /usr/local/bin/run-non-root \
-    /usr/local/bin/su-exec \
-    /usr/local/bin
+ADD --chown=root:root \
+    --chmod=755 \
+    https://github.com/ncopa/su-exec/releases/download/v0.3/su-exec-static-v0.3-arm64 \
+    /patch/usr/local/bin/su-exec
+
+FROM downloader-${TARGETARCH} AS downloader
+
+ADD --chown=root:root \
+    --chmod=755 \
+    https://raw.githubusercontent.com/creemama/run-non-root/v1.5.1/run-non-root.sh \
+    /patch/usr/local/bin/run-non-root
+
+ADD --chown=root:root \
+    --chmod=755 \
+    https://raw.githubusercontent.com/userid0x0/run-non-root-wrapper/master/run-non-root-wrapper.sh \
+    /patch/usr/local/bin/run-non-root-wrapper
+
+# ---
+
+FROM ${BASEIMAGE}
+
+COPY --from=downloader /patch /
 
 RUN mkdir -p /home/nonroot_fallback \
     && chmod 777 /home/nonroot_fallback
@@ -42,5 +50,5 @@ RUN mkdir -p /home/nonroot_fallback \
 VOLUME "/app"
 WORKDIR "/app"
 
-ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+ENTRYPOINT ["bash", "/usr/local/bin/run-non-root-wrapper"]
 CMD ["/bin/bash"]
