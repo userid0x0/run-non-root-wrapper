@@ -36,17 +36,23 @@ homedir_valid () {
 }
 
 entrypointd () {
-  # check for scripts in /entrypoint.d
+  # check for scripts in /entrypoint.d or /custom-cont-init.d
   # *.envsh: source script (e.g. load environment variables)
   # *.sh:    execute script
   local isRoot
   local file ignore entrypointDir rc
 
   isRoot="${1}"
-  entrypointDir="/entrypoint.d"
 
-  [ ! -d "${entrypointDir}" ] && return 0
+  [ ! -d "/entrypoint.d" ] || [ ! -d "/custom-cont-init.d" ] \
+    || { echo "Error: Multiple entrypoint script folders exist (Reason: not supported)"; exit 1; }
 
+  [ -d "/entrypoint.d" ]       && entrypointDir="/entrypoint.d"
+  [ -d "/custom-cont-init.d" ] && entrypointDir="/custom-cont-init.d"
+
+  [ -z "${entrypointDir}" ] && return 0
+
+  verbose && echo "Info: Using entrypoint script folder '${entrypointDir}'"
   for file in $(find "${entrypointDir}" -type f | sort -V); do
     ignore=0
     case "${file}" in
