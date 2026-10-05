@@ -17,6 +17,7 @@ CMD ["/bin/bash"]
 
 ## Environment
 * `RUN_NON_ROOT_STATDIR` detect desired UID:GID from this directory
+* `RUN_NON_ROOT_CHOWN_PATH`/`RUN_NON_ROOT_CHOWN_PATH_BASEIMAGE` colon separated pathes forwarded as `--path` to [creema/run-non-root](https://github.com/creemama/run-non-root)
 * others see [creema/run-non-root](https://github.com/creemama/run-non-root)
 
 ## Logic

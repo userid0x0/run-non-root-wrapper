@@ -112,8 +112,6 @@ main () {
   [ "${container}" = "podman" ] && isPodman=true
   { [ "$(whoami 2> /dev/null)" = 'root' ] || [ "$(id -u)" -eq 0 ]; } && isRoot=true
 
-  entrypointd "${isRoot}"
-
   [ -n "${RUN_NON_ROOT_GID}${RUN_NON_ROOT_UID}" ] && runNonRootUidGidAvailable=true
   [ -n "${RUN_NON_ROOT_GID}${RUN_NON_ROOT_GROUP}${RUN_NON_ROOT_UID}${RUN_NON_ROOT_USER}" ] && runNonRootEnvAvailable=true
   [ -d "/home/nonroot_fallback" ] && [ "$(stat -c '%A' "/home/nonroot_fallback/")" = "drwxrwxrwx" ] \
@@ -149,10 +147,17 @@ main () {
       RUN_NON_ROOT_VERBOSE="true"
     fi
 
+    RUN_NON_ROOT_WRAPPER_UID=${RUN_NON_ROOT_UID:-1000}
+    RUN_NON_ROOT_WRAPPER_GID=${RUN_NON_ROOT_GID:-1000}
+
     RUN_NON_ROOT_VERBOSE=${RUN_NON_ROOT_VERBOSE:-"false"}
   elif [ -n "${RUN_NON_ROOT_STATDIR}" ]; then
-    runNonRootArgs+=( "--uid" "$(stat -c '%u' "${RUN_NON_ROOT_STATDIR}")" )
-    runNonRootArgs+=( "--gid" "$(stat -c '%g' "${RUN_NON_ROOT_STATDIR}")" )
+    RUN_NON_ROOT_WRAPPER_UID=$(stat -c '%u' "${RUN_NON_ROOT_STATDIR}")
+    RUN_NON_ROOT_WRAPPER_GID=$(stat -c '%g' "${RUN_NON_ROOT_STATDIR}")
+
+    runNonRootArgs+=( "--uid" "${RUN_NON_ROOT_WRAPPER_UID}" )
+    runNonRootArgs+=( "--gid" "${RUN_NON_ROOT_WRAPPER_GID}" )
+
     RUN_NON_ROOT_VERBOSE=${RUN_NON_ROOT_VERBOSE:-"false"}
   elif [ "${isPodman}" = "true" ]; then
     # podman detected
@@ -161,9 +166,14 @@ main () {
     if [ "${isRoot}" = "true" ]; then
       # podman
       # - prevent that run-non-root creates a user
-      runNonRootArgs+=( "--user" "root" "--uid" "0" )
-      runNonRootArgs+=( "--group" "root" "--gid" "0" )
+      RUN_NON_ROOT_WRAPPER_UID=0
+      RUN_NON_ROOT_WRAPPER_GID=0
+      runNonRootArgs+=( "--user" "root" "--uid" "${RUN_NON_ROOT_WRAPPER_UID}" )
+      runNonRootArgs+=( "--group" "root" "--gid" "${RUN_NON_ROOT_WRAPPER_GID}" )
     else
+      RUN_NON_ROOT_WRAPPER_UID=$(id -u)
+      RUN_NON_ROOT_WRAPPER_GID=$(id -g)
+
       ! homedir_valid && [ -n "${homeDirFallback}" ] && export HOME="${homeDirFallback}"
     fi
     # else: otherwise hope that option --userns=keep-id is set
@@ -171,13 +181,32 @@ main () {
     # docker not running as root, assume option --user <uid>:<gid> was specified
     # - no output
     RUN_NON_ROOT_VERBOSE=${RUN_NON_ROOT_VERBOSE:-"false"}
+
+    RUN_NON_ROOT_WRAPPER_UID=$(id -u)
+    RUN_NON_ROOT_WRAPPER_GID=$(id -g)
+
     ! homedir_valid && [ -n "${homeDirFallback}" ] && export HOME="${homeDirFallback}"
+  fi
+
+  if [ -n "${RUN_NON_ROOT_CHOWN_PATH_BASEIMAGE}" ]; then
+    # required for the image itself
+    runNonRootArgs+=( "--path" "${RUN_NON_ROOT_CHOWN_PATH_BASEIMAGE}" )
+  fi
+
+  if [ -n "${RUN_NON_ROOT_CHOWN_PATH}" ]; then
+    # user input
+    runNonRootArgs+=( "--path" "${RUN_NON_ROOT_CHOWN_PATH}" )
   fi
 
   RUN_NON_ROOT_VERBOSE=${RUN_NON_ROOT_VERBOSE:-"true"}
   if ! verbose; then
     runNonRootArgs+=( "--quiet" )
   fi
+
+  # delayed execution for custom actions as entrypoint user e.g. root
+  export RUN_NON_ROOT_WRAPPER_UID RUN_NON_ROOT_WRAPPER_GID
+  entrypointd "${isRoot}"
+  unset RUN_NON_ROOT_WRAPPER_UID RUN_NON_ROOT_WRAPPER_GID
 
   verbose && echo "exec /usr/local/bin/run-non-root ${runNonRootArgs[*]} -- " "$(stringify_arguments "${@}")"
   exec /usr/local/bin/run-non-root "${runNonRootArgs[@]}" -- "${@}"
