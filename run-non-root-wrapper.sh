@@ -218,4 +218,5 @@ main () {
   exec /usr/local/bin/run-non-root "${runNonRootArgs[@]}" -- "${@}"
 }
 
-main "${@}"
+# run main if not sourced
+(return 0 2>/dev/null) || main "${@}"
