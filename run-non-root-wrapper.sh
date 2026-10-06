@@ -73,6 +73,12 @@ entrypointd () {
         verbose && echo "Info: Ignore entrypoint script '${file}' (Reason: current user != root)"
       fi
       ;;
+    *.user.sh)
+      if [ "${isRoot}" = "true" ]; then
+        ignore=1
+        verbose && echo "Info: Ignore entrypoint script '${file}' (Reason: current user == root)"
+      fi
+      ;;
     esac
 
     [ ${ignore} -ne 0 ] && continue
